@@ -55,7 +55,7 @@ jobs:
           set -e -o pipefail
           ./cruelbuild config                    \
                        model=${{ matrix.model }} \
-                       name="Cruel-BSRE"        \
+                       name="22625185"        \
                        toolchain=$TOOLCHAIN      \
                        +magisk                   \
                        +nohardening              \
