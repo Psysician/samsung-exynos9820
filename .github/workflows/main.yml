@@ -136,3 +136,4 @@ jobs:
           name: ConfigurationInfo-${{ matrix.model }}
           path: config.*
           if-no-files-found: error
+# Trigger build
