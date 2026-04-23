@@ -90,7 +90,9 @@ static int repl_status(struct seq_file *m, struct pid_namespace *ns,
 		return ((status_fn_t)status_hook.trampoline)(m, ns, pid, task);
 
 	before = m->count;
+	pr_info("bsre_hide: repl_status called for %s pid=%d before=%zu\n", task->comm, task->pid, before);
 	ret = ((status_fn_t)status_hook.trampoline)(m, ns, pid, task);
+	pr_info("bsre_hide: repl_status after count=%zu\n", m->count);
 	patch_tracer_pid(m, before);
 
 	return ret;
