@@ -1,6 +1,12 @@
 /*
- * bsre_hide.ko v3.1 — Fix: use indirect branch in trampoline (LDR X16, addr; BR X16)
- * Direct B has ±128MB range limit, vmalloc is too far from kernel text.
+ * bsre_hide.ko v4 — Hide TracerPid via seq_file output patching
+ *
+ * v3 bug: setting task->ptrace=0 doesn't affect ptrace_parent() which
+ * uses the parent task link, not the ptrace field. TracerPid was still visible.
+ *
+ * v4 fix: let proc_pid_status run normally, then post-process the seq_file
+ * output buffer to replace "TracerPid:\tNNN" with "TracerPid:\t0".
+ * Also hides thread state via do_task_stat (working since v2).
  */
 
 #include <linux/module.h>
@@ -11,12 +17,10 @@
 #include <linux/string.h>
 #include <linux/version.h>
 #include <linux/vmalloc.h>
-#include <linux/mm.h>
-#include <asm/insn.h>
 #include <asm/cacheflush.h>
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Hide TracerPid and thread state v3.1 — indirect branch trampoline");
+MODULE_DESCRIPTION("Hide TracerPid + thread state v4 — output patching");
 
 static char target_comm[TASK_COMM_LEN] = "";
 module_param_string(target_comm, target_comm, sizeof(target_comm), 0644);
@@ -46,27 +50,53 @@ static bool should_hide(struct task_struct *task)
 	return strstr(task->comm, target_comm) != NULL;
 }
 
+/*
+ * Post-process seq_file buffer to replace TracerPid value with 0.
+ * Searches for "TracerPid:\tNNN\n" and overwrites NNN with "0  " (padded).
+ */
+static void patch_tracer_pid(struct seq_file *m, size_t start_pos)
+{
+	char *buf = m->buf;
+	size_t end = m->count;
+	char *p, *nl, *val;
+	size_t i;
+
+	if (!buf || end <= start_pos)
+		return;
+
+	/* Search for "TracerPid:\t" in the new output */
+	for (i = start_pos; i + 12 < end; i++) {
+		if (buf[i] == 'T' && buf[i+1] == 'r' &&
+		    memcmp(&buf[i], "TracerPid:\t", 11) == 0) {
+			val = &buf[i + 11]; /* start of the number */
+			nl = memchr(val, '\n', end - (val - buf));
+			if (!nl) break;
+			/* Overwrite number with "0" + spaces */
+			*val = '0';
+			memset(val + 1, ' ', nl - val - 1);
+			return;
+		}
+	}
+}
+
+/* Replacement for proc_pid_status: call original, then patch output */
 static int repl_status(struct seq_file *m, struct pid_namespace *ns,
 		       struct pid *pid, struct task_struct *task)
 {
 	int ret;
-	unsigned int saved = 0;
-	bool hiding = false;
+	size_t before;
 
-	if (should_hide(task) && task->ptrace) {
-		saved = task->ptrace;
-		task->ptrace = 0;
-		hiding = true;
-	}
+	if (!should_hide(task))
+		return ((status_fn_t)status_hook.trampoline)(m, ns, pid, task);
 
+	before = m->count;
 	ret = ((status_fn_t)status_hook.trampoline)(m, ns, pid, task);
-
-	if (hiding)
-		task->ptrace = saved;
+	patch_tracer_pid(m, before);
 
 	return ret;
 }
 
+/* Replacement for do_task_stat: hide thread state T */
 static int repl_stat(struct seq_file *m, struct pid_namespace *ns,
 		     struct pid *pid, struct task_struct *task, int whole)
 {
@@ -88,13 +118,7 @@ static int repl_stat(struct seq_file *m, struct pid_namespace *ns,
 	return ret;
 }
 
-/*
- * Trampoline layout (4 instructions = 16 bytes):
- *   [0] saved_insn          — original first instruction (e.g., STP X29,X30,[SP,#-0xC0]!)
- *   [4] LDR X16, [PC, #8]   — load target address from [12]
- *   [8] BR X16              — indirect branch to orig_func+4
- *  [12] <64-bit address>    — orig_func + 4
- */
+/* Trampoline: saved_insn + LDR X16,[PC,#8] + BR X16 + 64-bit addr */
 static void *build_trampoline(u32 saved_insn, void *orig_addr)
 {
 	u32 *t;
@@ -103,26 +127,20 @@ static void *build_trampoline(u32 saved_insn, void *orig_addr)
 	t = __vmalloc(PAGE_SIZE, GFP_KERNEL, PAGE_KERNEL_EXEC);
 	if (!t) return NULL;
 
-	t[0] = saved_insn;		/* original instruction */
-	t[1] = 0x58000050;		/* LDR X16, [PC, #8] (literal load, offset=+8 bytes=2 insns) */
-	t[2] = 0xd61f0200;		/* BR X16 */
-	t[3] = (u32)(target & 0xFFFFFFFF);	/* low 32 bits of address */
-	t[4] = (u32)(target >> 32);		/* high 32 bits of address */
+	t[0] = saved_insn;
+	t[1] = 0x58000050;	/* LDR X16, [PC, #8] */
+	t[2] = 0xd61f0200;	/* BR X16 */
+	t[3] = (u32)(target & 0xFFFFFFFF);
+	t[4] = (u32)(target >> 32);
 
 	flush_icache_range((unsigned long)t, (unsigned long)&t[5]);
-
-	pr_info("bsre_hide: trampoline @ %px → insn=0x%08x → jump %px\n",
-		t, saved_insn, (void *)target);
 	return t;
 }
 
 static u32 make_branch(void *from, void *to)
 {
 	long off = (long)to - (long)from;
-	if (off < -(1 << 27) || off >= (1 << 27)) {
-		pr_err("bsre_hide: branch %px→%px offset %ld too large\n", from, to, off);
-		return 0;
-	}
+	if (off < -(1 << 27) || off >= (1 << 27)) return 0;
 	return 0x14000000 | ((off >> 2) & 0x03FFFFFF);
 }
 
@@ -143,8 +161,7 @@ static int install_hook(struct hook_state *h, void *replacement)
 	fn_patch_text(addrs, insns, 1);
 
 	h->active = true;
-	pr_info("bsre_hide: hooked %s @ %px (insn 0x%08x → B %px)\n",
-		h->name, h->orig_addr, h->orig_insn, replacement);
+	pr_info("bsre_hide: hooked %s\n", h->name);
 	return 0;
 }
 
@@ -163,28 +180,23 @@ static void remove_hook(struct hook_state *h)
 static int __init bsre_hide_init(void)
 {
 	int ret;
-	pr_info("bsre_hide v3.1: loading (target='%s')\n", target_comm);
+	pr_info("bsre_hide v4: loading (target='%s')\n", target_comm);
 
 	fn_patch_text = (void *)kallsyms_lookup_name("aarch64_insn_patch_text");
-	if (!fn_patch_text) { pr_err("bsre_hide: no patch_text\n"); return -ENOENT; }
+	if (!fn_patch_text) return -ENOENT;
 
 	status_hook.name = "proc_pid_status";
 	status_hook.orig_addr = (void *)kallsyms_lookup_name("proc_pid_status");
 	stat_hook.name = "do_task_stat";
 	stat_hook.orig_addr = (void *)kallsyms_lookup_name("do_task_stat");
-
-	if (!status_hook.orig_addr || !stat_hook.orig_addr) {
-		pr_err("bsre_hide: symbol not found\n");
-		return -ENOENT;
-	}
+	if (!status_hook.orig_addr || !stat_hook.orig_addr) return -ENOENT;
 
 	ret = install_hook(&status_hook, repl_status);
 	if (ret) return ret;
-
 	ret = install_hook(&stat_hook, repl_stat);
 	if (ret) { remove_hook(&status_hook); return ret; }
 
-	pr_info("bsre_hide v3.1: active\n");
+	pr_info("bsre_hide v4: active — TracerPid output patching + thread state hiding\n");
 	return 0;
 }
 
@@ -192,7 +204,7 @@ static void __exit bsre_hide_exit(void)
 {
 	remove_hook(&stat_hook);
 	remove_hook(&status_hook);
-	pr_info("bsre_hide v3.1: unloaded\n");
+	pr_info("bsre_hide v4: unloaded\n");
 }
 
 module_init(bsre_hide_init);
