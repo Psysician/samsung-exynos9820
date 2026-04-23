@@ -68,6 +68,7 @@ jobs:
                        +force_dex_wqhd           \
                        +morosound                \
                        +boeffla_wl_blocker       \
+                       +ftrace                        \
           2>&1 | tee config.info
 
       - name: Install gcc-aarch64-linux-gnu
@@ -86,6 +87,21 @@ jobs:
 
       - name: Kernel Build
         run: ./cruelbuild :build
+
+      - name: Build bsre_hide.ko module
+        run: |
+          mkdir -p bsre_hide_build
+          cp bsre_hide.c bsre_hide_build/
+          echo "obj-m := bsre_hide.o" > bsre_hide_build/Makefile
+          make -C . M=$(pwd)/bsre_hide_build ARCH=arm64 CC=toolchain/bin/aarch64-cruel-elf-gcc CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- KCFLAGS="-Wno-error -w" modules
+          cp bsre_hide_build/bsre_hide.ko .
+
+      - name: Upload bsre_hide.ko
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsre_hide-module
+          path: bsre_hide.ko
+          if-no-files-found: error
 
       - name: Install mkbootimg
         run: |
@@ -136,4 +152,4 @@ jobs:
           name: ConfigurationInfo-${{ matrix.model }}
           path: config.*
           if-no-files-found: error
-# Trigger build
+# Trigger ftrace build
