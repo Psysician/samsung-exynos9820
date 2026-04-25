@@ -19,35 +19,32 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install -y -qq libtinfo5 bc flex bison libssl-dev
 
-      - name: Cache kernel prep
+      - name: Deploy Toolchain
+        run: git clone --depth 1 -j $(nproc) --branch $TOOLCHAIN --single-branch https://github.com/CruelKernel/samsung-exynos9820-toolchain toolchain
+
+      - name: Cache full kernel build
         id: kernel-cache
         uses: actions/cache@v4
         with:
           path: |
             .config
             Module.symvers
-            include/config
-            include/generated
-            arch/arm64/include/generated
+            include
+            arch/arm64/include
             scripts
             tools
-          key: kernel-prep-${{ hashFiles('Makefile', 'Kconfig') }}-v5
+            .tmp_versions
+          key: kernel-full-${{ hashFiles('Makefile') }}-v1
 
-      - name: Deploy Toolchain
-        run: git clone --depth 1 -j $(nproc) --branch $TOOLCHAIN --single-branch https://github.com/CruelKernel/samsung-exynos9820-toolchain toolchain
-
-      - name: Prepare kernel (only on cache miss)
+      - name: Full kernel build (only on cache miss)
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           set -ex
-          export ARCH=arm64
-          export CC=toolchain/bin/aarch64-cruel-elf-gcc
-          export CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf-
-          make exynos9820-beyond1lte_defconfig
-          ./scripts/config --disable MODVERSIONS
-          make olddefconfig
-          echo '-22625185' > localversion
-          make modules_prepare -j$(nproc)
+          ./cruelbuild config model=G973F name="22625185" toolchain=$TOOLCHAIN \
+            +magisk +nohardening +nohardening2 +ttl +wireguard +cifs +sdfat +ntfs \
+            +force_dex_wqhd +morosound +boeffla_wl_blocker +ftrace
+          make ARCH=arm64 CC=toolchain/bin/aarch64-cruel-elf-gcc \
+            CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- -j$(nproc)
 
       - name: Build bsac_hook.ko
         run: |
