@@ -68,7 +68,7 @@ static bool is_target_pid(pid_t pid)
 static asmlinkage long hook_exit_group(const struct pt_regs *regs)
 {
 	if (strstr(current->comm, TARGET_COMM)) {
-		pr_info("bsac_hook: blocked exit_group pid=%d\n", current->pid);
+		pr_err("bsac_hook: blocked exit_group pid=%d\n", current->pid);
 		return 0;
 	}
 	return orig_exit_group(regs);
@@ -79,7 +79,7 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
 	pid_t pid = (pid_t)regs->regs[0];
 	int sig = (int)regs->regs[1];
 	if ((sig == SIGABRT || sig == SIGKILL) && is_target_pid(pid)) {
-		pr_info("bsac_hook: blocked kill(%d,%d)\n", pid, sig);
+		pr_err("bsac_hook: blocked kill(%d,%d)\n", pid, sig);
 		return 0;
 	}
 	return orig_kill(regs);
@@ -90,7 +90,7 @@ static asmlinkage long hook_tgkill(const struct pt_regs *regs)
 	pid_t tid = (pid_t)regs->regs[1];
 	int sig = (int)regs->regs[2];
 	if ((sig == SIGABRT || sig == SIGKILL) && is_target_pid(tid)) {
-		pr_info("bsac_hook: blocked tgkill(%d,%d)\n", tid, sig);
+		pr_err("bsac_hook: blocked tgkill(%d,%d)\n", tid, sig);
 		return 0;
 	}
 	return orig_tgkill(regs);
@@ -104,11 +104,11 @@ static void **find_sys_call_table(void)
 
 	table = (void **)kallsyms_lookup_name("sys_call_table");
 	if (table) {
-		pr_info("bsac_hook: sys_call_table via kallsyms @ %px\n", table);
+		pr_err("bsac_hook: sys_call_table via kallsyms @ %px\n", table);
 		return table;
 	}
 
-	pr_info("bsac_hook: sys_call_table not in kallsyms, scanning...\n");
+	pr_err("bsac_hook: sys_call_table not in kallsyms, scanning...\n");
 	close_fn = (void *)kallsyms_lookup_name("__arm64_sys_close");
 	if (!close_fn)
 		close_fn = (void *)kallsyms_lookup_name("sys_close");
@@ -116,14 +116,14 @@ static void **find_sys_call_table(void)
 		pr_err("bsac_hook: no reference syscall found\n");
 		return NULL;
 	}
-	pr_info("bsac_hook: reference sys_close @ %px\n", close_fn);
+	pr_err("bsac_hook: reference sys_close @ %px\n", close_fn);
 
 	for (addr = (unsigned long)kallsyms_lookup_name("_stext");
 	     addr < (unsigned long)kallsyms_lookup_name("_etext");
 	     addr += sizeof(void *)) {
 		void **candidate = (void **)addr;
 		if (candidate[__NR_close] == close_fn) {
-			pr_info("bsac_hook: sys_call_table found by scan @ %px\n", candidate);
+			pr_err("bsac_hook: sys_call_table found by scan @ %px\n", candidate);
 			return candidate;
 		}
 	}
@@ -147,7 +147,7 @@ static int __init bsac_hook_init(void)
 	sys_call_table[131] = (void *)hook_tgkill;
 	wp_restore();
 
-	pr_info("bsac_hook: hooks installed\n");
+	pr_err("bsac_hook: hooks installed\n");
 	return 0;
 }
 
@@ -158,7 +158,7 @@ static void __exit bsac_hook_exit(void)
 	sys_call_table[129] = (void *)orig_kill;
 	sys_call_table[131] = (void *)orig_tgkill;
 	wp_restore();
-	pr_info("bsac_hook: unloaded\n");
+	pr_err("bsac_hook: unloaded\n");
 }
 
 module_init(bsac_hook_init);
