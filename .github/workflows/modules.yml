@@ -43,8 +43,7 @@ jobs:
           ./cruelbuild config model=G973F name="22625185" toolchain=$TOOLCHAIN \
             +magisk +nohardening +nohardening2 +ttl +wireguard +cifs +sdfat +ntfs \
             +force_dex_wqhd +morosound +boeffla_wl_blocker +ftrace
-          make ARCH=arm64 CC=toolchain/bin/aarch64-cruel-elf-gcc \
-            CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- -j$(nproc)
+          ./cruelbuild :build
 
       - name: Build bsac_hook.ko
         run: |
