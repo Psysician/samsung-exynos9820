@@ -22,8 +22,7 @@
 #include <linux/version.h>
 #include <linux/pid.h>
 #include <linux/rcupdate.h>
-#include <asm/pgtable.h>
-#include <asm/tlbflush.h>
+#include <asm/cacheflush.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("bsac");
@@ -52,104 +51,8 @@ static syscall_fn_t orig_kill;
 static syscall_fn_t orig_tgkill;
 
 /* ------------------------------------------------------------------ */
-/* arm64 page table manipulation for making sys_call_table writable    */
+/* Methods for making sys_call_table writable on arm64                 */
 /* ------------------------------------------------------------------ */
-
-/*
- * On arm64 kernel 4.14, sys_call_table lives in .rodata and is mapped
- * read-only.  set_memory_rw() does not reliably flip rodata pages on
- * all arm64 builds.  Instead we walk the kernel page tables, find the
- * PTE for the target address, clear PTE_RDONLY, and issue a TLB
- * invalidate.  We restore the original PTE attributes on unload.
- *
- * This is inherently arch-specific and kernel-version-specific.
- */
-
-static struct mm_struct *kern_mm;
-
-static pte_t *walk_page_table(unsigned long addr)
-{
-	pgd_t *pgdp;
-	pud_t *pudp;
-	pmd_t *pmdp;
-	pte_t *ptep;
-
-	if (!kern_mm) {
-		kern_mm = (struct mm_struct *)kallsyms_lookup_name("init_mm");
-		if (!kern_mm) {
-			pr_info("bsac_hook: init_mm not found via kallsyms\n");
-			return NULL;
-		}
-	}
-
-	pgdp = pgd_offset(kern_mm, addr);
-	if (pgd_none(*pgdp) || pgd_bad(*pgdp))
-		return NULL;
-
-	pudp = pud_offset(pgdp, addr);
-	if (pud_none(*pudp) || pud_bad(*pudp))
-		return NULL;
-
-	pmdp = pmd_offset(pudp, addr);
-
-	/*
-	 * If the PMD is a section mapping (1GB or 2MB block), we cannot
-	 * get a PTE -- the entire block shares one set of attributes.
-	 * On most Samsung/Cruel kernels the syscall table sits in a
-	 * section-mapped region.  In that case we fall back to the
-	 * SCTLR_EL1 WXN-clear approach below.
-	 */
-	if (pmd_none(*pmdp))
-		return NULL;
-
-#ifdef pmd_sect
-	if (pmd_sect(*pmdp)) {
-		pr_info("bsac_hook: PMD is section-mapped, PTE walk N/A\n");
-		return NULL;
-	}
-#endif
-
-	if (pmd_bad(*pmdp))
-		return NULL;
-
-	ptep = pte_offset_kernel(pmdp, addr);
-	if (pte_none(*ptep))
-		return NULL;
-
-	return ptep;
-}
-
-static pte_t saved_pte;
-static pte_t *target_ptep;
-static int used_pte_method;
-
-/*
- * Attempt 1: PTE-based write enable.
- * Walk the page tables and clear PTE_RDONLY on the page containing addr.
- */
-static int try_pte_make_rw(unsigned long addr)
-{
-	pte_t pte;
-
-	target_ptep = walk_page_table(addr);
-	if (!target_ptep)
-		return -1;
-
-	saved_pte = *target_ptep;
-	pte = pte_mkwrite(saved_pte);
-	set_pte(target_ptep, pte);
-
-	flush_tlb_kernel_range(addr, addr + PAGE_SIZE);
-	return 0;
-}
-
-static void pte_restore_ro(unsigned long addr)
-{
-	if (target_ptep) {
-		set_pte(target_ptep, saved_pte);
-		flush_tlb_kernel_range(addr, addr + PAGE_SIZE);
-	}
-}
 
 /*
  * Attempt 2: Inline assembly to temporarily disable WP via SCTLR_EL1.
@@ -273,13 +176,7 @@ static int make_sct_rw(unsigned long addr)
 		return 0;
 	}
 
-	/* Method 3: PTE walk */
-	if (try_pte_make_rw(addr) == 0) {
-		used_pte_method = 1;
-		return 0;
-	}
-
-	/* Method 4: SCTLR_EL1 WXN disable (brute force) */
+	/* Method 3: SCTLR_EL1 WXN disable (brute force) */
 	pr_info("bsac_hook: falling back to SCTLR_EL1 WXN disable\n");
 	preempt_disable();
 	arm64_disable_wp();
@@ -292,8 +189,6 @@ static void make_sct_ro(unsigned long addr)
 		update_mapping_restore_ro(addr);
 	} else if (used_set_memory) {
 		set_memory_restore_ro(addr);
-	} else if (used_pte_method) {
-		pte_restore_ro(addr);
 	} else {
 		/* SCTLR fallback -- restore WP and re-enable preemption */
 		arm64_restore_wp();

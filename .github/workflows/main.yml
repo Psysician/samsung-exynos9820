@@ -88,6 +88,15 @@ jobs:
       - name: Kernel Build
         run: ./cruelbuild :build
 
+      - name: Upload Module.symvers for fast module builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-cache
+          path: |
+            Module.symvers
+            .config
+          if-no-files-found: warn
+
       - name: Build bsre_hide.ko module
         run: |
           mkdir -p bsre_hide_build
