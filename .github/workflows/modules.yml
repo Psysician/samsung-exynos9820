@@ -31,7 +31,7 @@ jobs:
             arch/arm64/include/generated
             scripts
             tools
-          key: kernel-prep-${{ hashFiles('Makefile', 'Kconfig') }}-v3
+          key: kernel-prep-${{ hashFiles('Makefile', 'Kconfig') }}-v4
 
       - name: Deploy Toolchain
         run: git clone --depth 1 -j $(nproc) --branch $TOOLCHAIN --single-branch https://github.com/CruelKernel/samsung-exynos9820-toolchain toolchain
@@ -45,6 +45,7 @@ jobs:
           export CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf-
           make exynos9820-beyond1lte_defconfig
           make olddefconfig
+          echo '-22625185' > localversion
           make modules_prepare -j$(nproc)
 
       - name: Build bsac_hook.ko
