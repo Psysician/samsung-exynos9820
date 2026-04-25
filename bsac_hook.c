@@ -65,6 +65,8 @@ static syscall_fn_t orig_tgkill;
  * This is inherently arch-specific and kernel-version-specific.
  */
 
+static struct mm_struct *kern_mm;
+
 static pte_t *walk_page_table(unsigned long addr)
 {
 	pgd_t *pgdp;
@@ -72,7 +74,15 @@ static pte_t *walk_page_table(unsigned long addr)
 	pmd_t *pmdp;
 	pte_t *ptep;
 
-	pgdp = pgd_offset_k(addr);
+	if (!kern_mm) {
+		kern_mm = (struct mm_struct *)kallsyms_lookup_name("init_mm");
+		if (!kern_mm) {
+			pr_info("bsac_hook: init_mm not found via kallsyms\n");
+			return NULL;
+		}
+	}
+
+	pgdp = pgd_offset(kern_mm, addr);
 	if (pgd_none(*pgdp) || pgd_bad(*pgdp))
 		return NULL;
 
