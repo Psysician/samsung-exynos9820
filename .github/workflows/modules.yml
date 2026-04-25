@@ -1,0 +1,77 @@
+name: Modules Only
+
+on:
+  push:
+    paths:
+      - '*.c'
+      - '*.h'
+      - '.github/workflows/modules.yml'
+
+env:
+  TOOLCHAIN: cruel
+
+jobs:
+  modules:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y -qq libtinfo5 bc flex bison libssl-dev
+
+      - name: Cache kernel prep
+        id: kernel-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .config
+            Module.symvers
+            include/config
+            include/generated
+            arch/arm64/include/generated
+            scripts
+            tools
+          key: kernel-prep-${{ hashFiles('Makefile', 'Kconfig') }}-v2
+
+      - name: Deploy Toolchain
+        run: git clone --depth 1 -j $(nproc) --branch $TOOLCHAIN --single-branch https://github.com/CruelKernel/samsung-exynos9820-toolchain toolchain
+
+      - name: Prepare kernel (only on cache miss)
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        run: |
+          ./cruelbuild config model=G973F name="22625185" toolchain=$TOOLCHAIN \
+            +magisk +nohardening +nohardening2 +ttl +wireguard +cifs +sdfat +ntfs \
+            +force_dex_wqhd +morosound +boeffla_wl_blocker +ftrace
+          make ARCH=arm64 CC=toolchain/bin/aarch64-cruel-elf-gcc \
+            CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- modules_prepare -j$(nproc)
+
+      - name: Build bsac_hook.ko
+        run: |
+          mkdir -p bsac_hook_build
+          cp bsac_hook.c bsac_hook_build/
+          echo "obj-m := bsac_hook.o" > bsac_hook_build/Makefile
+          make -C . M=$(pwd)/bsac_hook_build ARCH=arm64 \
+            CC=toolchain/bin/aarch64-cruel-elf-gcc \
+            CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- \
+            KCFLAGS="-Wno-error -w" modules
+          cp bsac_hook_build/bsac_hook.ko .
+
+      - name: Build bsre_hide.ko
+        run: |
+          mkdir -p bsre_hide_build
+          cp bsre_hide.c bsre_hide_build/
+          echo "obj-m := bsre_hide.o" > bsre_hide_build/Makefile
+          make -C . M=$(pwd)/bsre_hide_build ARCH=arm64 \
+            CC=toolchain/bin/aarch64-cruel-elf-gcc \
+            CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- \
+            KCFLAGS="-Wno-error -w" modules
+          cp bsre_hide_build/bsre_hide.ko .
+
+      - name: Upload modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-modules
+          path: |
+            bsac_hook.ko
+            bsre_hide.ko
+          if-no-files-found: error
