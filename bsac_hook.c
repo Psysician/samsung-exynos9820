@@ -56,27 +56,29 @@ static void wp_restore(void)
 static bool is_target_pid(pid_t pid)
 {
 	struct task_struct *task;
+	struct task_struct *leader;
 	bool match = false;
 	rcu_read_lock();
 	task = pid_task(find_vpid(pid), PIDTYPE_PID);
-	if (task && strstr(task->comm, TARGET_COMM))
-		match = true;
+	if (task) {
+		leader = task->group_leader;
+		if ((leader && strstr(leader->comm, TARGET_COMM)) ||
+		    strstr(task->comm, TARGET_COMM))
+			match = true;
+	}
 	rcu_read_unlock();
 	return match;
 }
 
 static asmlinkage long hook_exit_group(const struct pt_regs *regs)
 {
-	if (strstr(current->comm, TARGET_COMM) ||
-	    strstr(current->comm, "cell.brawl") ||
-	    current->tgid == current->pid) {
-		/* Log ALL exit_group calls to find the right comm */
-		if (current->pid > 10000)
-			pr_err("bsac_hook: exit_group pid=%d comm=%s tgid=%d\n",
-				current->pid, current->comm, current->tgid);
-		if (strstr(current->comm, TARGET_COMM) ||
-		    strstr(current->comm, "cell.brawl"))
-			return 0;
+	struct task_struct *leader = current->group_leader;
+	if ((leader && strstr(leader->comm, TARGET_COMM)) ||
+	    strstr(current->comm, TARGET_COMM)) {
+		pr_err("bsac_hook: blocked exit_group pid=%d comm=%s leader=%s\n",
+			current->pid, current->comm,
+			leader ? leader->comm : "?");
+		return 0;
 	}
 	return orig_exit_group(regs);
 }
@@ -98,11 +100,15 @@ static asmlinkage long hook_tgkill(const struct pt_regs *regs)
 	pid_t tid = (pid_t)regs->regs[1];
 	int sig = (int)regs->regs[2];
 	if (sig == SIGABRT || sig == SIGKILL) {
-		if (tid > 10000)
-			pr_err("bsac_hook: tgkill(%d,%d,sig=%d) from %s/%d\n",
-				tgid, tid, sig, current->comm, current->pid);
-		if (is_target_pid(tid) || strstr(current->comm, "cell.brawl"))
+		struct task_struct *leader = current->group_leader;
+		bool self_kill = (leader && strstr(leader->comm, TARGET_COMM)) ||
+				 strstr(current->comm, TARGET_COMM);
+		if (self_kill || is_target_pid(tid)) {
+			pr_err("bsac_hook: blocked tgkill(%d,%d,sig=%d) comm=%s leader=%s\n",
+				tgid, tid, sig, current->comm,
+				leader ? leader->comm : "?");
 			return 0;
+		}
 	}
 	return orig_tgkill(regs);
 }
