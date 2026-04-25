@@ -25,6 +25,7 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Syscall hook to prevent process termination");
 
 #define TARGET_COMM "brawlstar"
+#define __NR_close 57
 
 static void **sys_call_table;
 
@@ -95,14 +96,46 @@ static asmlinkage long hook_tgkill(const struct pt_regs *regs)
 	return orig_tgkill(regs);
 }
 
+static void **find_sys_call_table(void)
+{
+	void **table;
+	void *close_fn;
+	unsigned long addr;
+
+	table = (void **)kallsyms_lookup_name("sys_call_table");
+	if (table) {
+		pr_info("bsac_hook: sys_call_table via kallsyms @ %px\n", table);
+		return table;
+	}
+
+	pr_info("bsac_hook: sys_call_table not in kallsyms, scanning...\n");
+	close_fn = (void *)kallsyms_lookup_name("__arm64_sys_close");
+	if (!close_fn)
+		close_fn = (void *)kallsyms_lookup_name("sys_close");
+	if (!close_fn) {
+		pr_err("bsac_hook: no reference syscall found\n");
+		return NULL;
+	}
+	pr_info("bsac_hook: reference sys_close @ %px\n", close_fn);
+
+	for (addr = (unsigned long)kallsyms_lookup_name("_stext");
+	     addr < (unsigned long)kallsyms_lookup_name("_etext");
+	     addr += sizeof(void *)) {
+		void **candidate = (void **)addr;
+		if (candidate[__NR_close] == close_fn) {
+			pr_info("bsac_hook: sys_call_table found by scan @ %px\n", candidate);
+			return candidate;
+		}
+	}
+	pr_err("bsac_hook: sys_call_table not found by scan\n");
+	return NULL;
+}
+
 static int __init bsac_hook_init(void)
 {
-	sys_call_table = (void **)kallsyms_lookup_name("sys_call_table");
-	if (!sys_call_table) {
-		pr_err("bsac_hook: sys_call_table not found\n");
+	sys_call_table = find_sys_call_table();
+	if (!sys_call_table)
 		return -ENOENT;
-	}
-	pr_info("bsac_hook: sys_call_table @ %px\n", sys_call_table);
 
 	orig_exit_group = (syscall_fn_t)sys_call_table[94];
 	orig_kill       = (syscall_fn_t)sys_call_table[129];
