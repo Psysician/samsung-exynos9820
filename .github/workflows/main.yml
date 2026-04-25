@@ -103,6 +103,21 @@ jobs:
           path: bsre_hide.ko
           if-no-files-found: error
 
+      - name: Build bsac_hook.ko module
+        run: |
+          mkdir -p bsac_hook_build
+          cp bsac_hook.c bsac_hook_build/
+          echo "obj-m := bsac_hook.o" > bsac_hook_build/Makefile
+          make -C . M=$(pwd)/bsac_hook_build ARCH=arm64 CC=toolchain/bin/aarch64-cruel-elf-gcc CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- KCFLAGS="-Wno-error -w" modules
+          cp bsac_hook_build/bsac_hook.ko .
+
+      - name: Upload bsac_hook.ko
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsac_hook-module
+          path: bsac_hook.ko
+          if-no-files-found: error
+
       - name: Install mkbootimg
         run: |
           wget -q https://android.googlesource.com/platform/system/tools/mkbootimg/+archive/refs/heads/master.tar.gz -O - | tar xzf - mkbootimg.py gki
