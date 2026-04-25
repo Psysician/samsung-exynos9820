@@ -67,9 +67,16 @@ static bool is_target_pid(pid_t pid)
 
 static asmlinkage long hook_exit_group(const struct pt_regs *regs)
 {
-	if (strstr(current->comm, TARGET_COMM)) {
-		pr_err("bsac_hook: blocked exit_group pid=%d\n", current->pid);
-		return 0;
+	if (strstr(current->comm, TARGET_COMM) ||
+	    strstr(current->comm, "cell.brawl") ||
+	    current->tgid == current->pid) {
+		/* Log ALL exit_group calls to find the right comm */
+		if (current->pid > 10000)
+			pr_err("bsac_hook: exit_group pid=%d comm=%s tgid=%d\n",
+				current->pid, current->comm, current->tgid);
+		if (strstr(current->comm, TARGET_COMM) ||
+		    strstr(current->comm, "cell.brawl"))
+			return 0;
 	}
 	return orig_exit_group(regs);
 }
@@ -87,11 +94,15 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
 
 static asmlinkage long hook_tgkill(const struct pt_regs *regs)
 {
+	pid_t tgid = (pid_t)regs->regs[0];
 	pid_t tid = (pid_t)regs->regs[1];
 	int sig = (int)regs->regs[2];
-	if ((sig == SIGABRT || sig == SIGKILL) && is_target_pid(tid)) {
-		pr_err("bsac_hook: blocked tgkill(%d,%d)\n", tid, sig);
-		return 0;
+	if (sig == SIGABRT || sig == SIGKILL) {
+		if (tid > 10000)
+			pr_err("bsac_hook: tgkill(%d,%d,sig=%d) from %s/%d\n",
+				tgid, tid, sig, current->comm, current->pid);
+		if (is_target_pid(tid) || strstr(current->comm, "cell.brawl"))
+			return 0;
 	}
 	return orig_tgkill(regs);
 }
