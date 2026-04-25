@@ -1,14 +1,11 @@
 /*
- * bsac_hook.c - Kernel module to intercept process termination syscalls
- *
- * Target: Samsung SM-G973F (Exynos 9820, arm64)
- * Kernel: CruelKernel 4.14.113
+ * bsac_hook.c - Intercept kill syscalls for anti-cheat bypass
  *
  * Hooks exit_group(94), kill(129), tgkill(131) on arm64.
- * Suppresses termination when the affected process comm contains "brawlstar".
+ * Suppresses when target process comm contains "brawlstar".
  *
- * Build:
- *   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KERNEL_DIR=/path/to/kernel
+ * Uses SCTLR_EL1 WXN bit to temporarily make sys_call_table writable.
+ * No pgtable headers needed — pure inline asm approach.
  */
 
 #include <linux/module.h>
@@ -22,189 +19,43 @@
 #include <linux/version.h>
 #include <linux/pid.h>
 #include <linux/rcupdate.h>
-#include <asm/cacheflush.h>
+#include <linux/preempt.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("bsac");
 MODULE_DESCRIPTION("Syscall hook to prevent process termination");
-MODULE_VERSION("1.0");
 
-/* arm64 syscall numbers */
-#define __NR_exit_group_arm64  94
-#define __NR_kill_arm64       129
-#define __NR_tgkill_arm64     131
-
-/* Comm substring to match */
 #define TARGET_COMM "brawlstar"
-
-/* Signals we suppress */
-#define SIG_ABORT  SIGABRT  /* 6 */
-#define SIG_KILL   SIGKILL  /* 9 */
 
 static void **sys_call_table;
 
-/* Original syscall function pointers */
 typedef asmlinkage long (*syscall_fn_t)(const struct pt_regs *regs);
 
 static syscall_fn_t orig_exit_group;
 static syscall_fn_t orig_kill;
 static syscall_fn_t orig_tgkill;
 
-/* ------------------------------------------------------------------ */
-/* Methods for making sys_call_table writable on arm64                 */
-/* ------------------------------------------------------------------ */
-
-/*
- * Attempt 2: Inline assembly to temporarily disable WP via SCTLR_EL1.
- * On arm64 bit 19 of SCTLR_EL1 is WXN (Write-implies-XN).  Clearing
- * it does not directly give us write to rodata, but we can also try
- * clearing bit 25 (EE) is irrelevant -- the actual trick on 4.14 arm64
- * is to disable the MMU write-protect by clearing SCTLR_EL1 bit 2 (C)
- * temporarily.
- *
- * A more portable approach: use update_mapping_prot() which is exported
- * on some Samsung kernels, or aarch64_insn_patch_text_nosync() for
- * word-sized writes.  We try those first.
- */
-
-/* Kernel may export these -- resolved at runtime via kallsyms */
-typedef void (*update_mapping_prot_fn)(phys_addr_t phys, unsigned long virt,
-				       phys_addr_t size, pgprot_t prot);
-typedef void (*set_memory_rw_fn)(unsigned long addr, int numpages);
-
-static update_mapping_prot_fn fn_update_mapping_prot;
-static set_memory_rw_fn fn_set_memory_rw;
-static set_memory_rw_fn fn_set_memory_ro;
-
-static unsigned long sct_phys;
-static unsigned long sct_virt;
-static int used_update_mapping;
-static int used_set_memory;
-
-static int try_update_mapping_rw(unsigned long addr)
-{
-	fn_update_mapping_prot = (update_mapping_prot_fn)
-		kallsyms_lookup_name("update_mapping_prot");
-
-	if (!fn_update_mapping_prot) {
-		pr_info("bsac_hook: update_mapping_prot not found\n");
-		return -1;
-	}
-
-	sct_virt = addr & PAGE_MASK;
-	sct_phys = virt_to_phys((void *)sct_virt);
-
-	fn_update_mapping_prot(sct_phys, sct_virt, PAGE_SIZE, PAGE_KERNEL);
-	pr_info("bsac_hook: update_mapping_prot -> RW OK\n");
-	return 0;
-}
-
-static void update_mapping_restore_ro(unsigned long addr)
-{
-	if (fn_update_mapping_prot) {
-		fn_update_mapping_prot(sct_phys, sct_virt, PAGE_SIZE,
-				       PAGE_KERNEL_RO);
-	}
-}
-
-static int try_set_memory_rw_method(unsigned long addr)
-{
-	fn_set_memory_rw = (set_memory_rw_fn)
-		kallsyms_lookup_name("set_memory_rw");
-	fn_set_memory_ro = (set_memory_rw_fn)
-		kallsyms_lookup_name("set_memory_ro");
-
-	if (!fn_set_memory_rw || !fn_set_memory_ro) {
-		pr_info("bsac_hook: set_memory_rw/ro not found\n");
-		return -1;
-	}
-
-	fn_set_memory_rw(addr & PAGE_MASK, 1);
-	pr_info("bsac_hook: set_memory_rw -> OK\n");
-	return 0;
-}
-
-static void set_memory_restore_ro(unsigned long addr)
-{
-	if (fn_set_memory_ro)
-		fn_set_memory_ro(addr & PAGE_MASK, 1);
-}
-
-/*
- * Attempt 3: Direct inline asm -- disable write protection at EL1.
- * This is the brute-force fallback.  We flip SCTLR_EL1 bit 19 (WXN)
- * off, do our writes, then restore it.  This must be done with
- * preemption and interrupts disabled.
- */
 static unsigned long saved_sctlr;
 
-static void arm64_disable_wp(void)
+static void wp_disable(void)
 {
-	unsigned long sctlr;
-
-	asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-	saved_sctlr = sctlr;
-	sctlr &= ~(1UL << 19); /* clear WXN */
-	asm volatile(
-		"msr sctlr_el1, %0\n"
-		"isb\n"
-		: : "r"(sctlr)
-	);
-}
-
-static void arm64_restore_wp(void)
-{
-	asm volatile(
-		"msr sctlr_el1, %0\n"
-		"isb\n"
-		: : "r"(saved_sctlr)
-	);
-}
-
-/* Unified helpers that try each method in order */
-static int make_sct_rw(unsigned long addr)
-{
-	/* Method 1: update_mapping_prot (Samsung/Cruel often exports this) */
-	if (try_update_mapping_rw(addr) == 0) {
-		used_update_mapping = 1;
-		return 0;
-	}
-
-	/* Method 2: set_memory_rw */
-	if (try_set_memory_rw_method(addr) == 0) {
-		used_set_memory = 1;
-		return 0;
-	}
-
-	/* Method 3: SCTLR_EL1 WXN disable (brute force) */
-	pr_info("bsac_hook: falling back to SCTLR_EL1 WXN disable\n");
+	unsigned long val;
 	preempt_disable();
-	arm64_disable_wp();
-	return 0;
+	asm volatile("mrs %0, sctlr_el1" : "=r"(val));
+	saved_sctlr = val;
+	val &= ~(1UL << 19);
+	asm volatile("msr sctlr_el1, %0\nisb" : : "r"(val));
 }
 
-static void make_sct_ro(unsigned long addr)
+static void wp_restore(void)
 {
-	if (used_update_mapping) {
-		update_mapping_restore_ro(addr);
-	} else if (used_set_memory) {
-		set_memory_restore_ro(addr);
-	} else {
-		/* SCTLR fallback -- restore WP and re-enable preemption */
-		arm64_restore_wp();
-		preempt_enable();
-	}
+	asm volatile("msr sctlr_el1, %0\nisb" : : "r"(saved_sctlr));
+	preempt_enable();
 }
-
-/* ------------------------------------------------------------------ */
-/* Helper: check if a PID's comm matches the target                    */
-/* ------------------------------------------------------------------ */
 
 static bool is_target_pid(pid_t pid)
 {
 	struct task_struct *task;
 	bool match = false;
-
 	rcu_read_lock();
 	task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	if (task && strstr(task->comm, TARGET_COMM))
@@ -213,30 +64,10 @@ static bool is_target_pid(pid_t pid)
 	return match;
 }
 
-static bool is_target_current(void)
-{
-	return strstr(current->comm, TARGET_COMM) != NULL;
-}
-
-/* ------------------------------------------------------------------ */
-/* Hooked syscall handlers                                             */
-/* ------------------------------------------------------------------ */
-
-/*
- * On arm64 kernel 4.14 with CONFIG_ARCH_HAS_SYSCALL_WRAPPER, syscall
- * functions take a single pt_regs pointer.  Arguments are extracted
- * from regs->regs[0..5].
- *
- *   exit_group(int status)        -> regs->regs[0] = status
- *   kill(pid_t pid, int sig)      -> regs->regs[0] = pid, regs->regs[1] = sig
- *   tgkill(pid_t tgid, pid_t tid, int sig) -> regs[0]=tgid, regs[1]=tid, regs[2]=sig
- */
-
 static asmlinkage long hook_exit_group(const struct pt_regs *regs)
 {
-	if (is_target_current()) {
-		pr_info("bsac_hook: blocked exit_group from %s (pid %d)\n",
-			current->comm, current->pid);
+	if (strstr(current->comm, TARGET_COMM)) {
+		pr_info("bsac_hook: blocked exit_group pid=%d\n", current->pid);
 		return 0;
 	}
 	return orig_exit_group(regs);
@@ -244,12 +75,10 @@ static asmlinkage long hook_exit_group(const struct pt_regs *regs)
 
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
-	pid_t target_pid = (pid_t)regs->regs[0];
+	pid_t pid = (pid_t)regs->regs[0];
 	int sig = (int)regs->regs[1];
-
-	if ((sig == SIG_ABORT || sig == SIG_KILL) && is_target_pid(target_pid)) {
-		pr_info("bsac_hook: blocked kill(%d, %d) targeting %s\n",
-			target_pid, sig, TARGET_COMM);
+	if ((sig == SIGABRT || sig == SIGKILL) && is_target_pid(pid)) {
+		pr_info("bsac_hook: blocked kill(%d,%d)\n", pid, sig);
 		return 0;
 	}
 	return orig_kill(regs);
@@ -259,73 +88,44 @@ static asmlinkage long hook_tgkill(const struct pt_regs *regs)
 {
 	pid_t tid = (pid_t)regs->regs[1];
 	int sig = (int)regs->regs[2];
-
-	if ((sig == SIG_ABORT || sig == SIG_KILL) && is_target_pid(tid)) {
-		pr_info("bsac_hook: blocked tgkill(_, %d, %d) targeting %s\n",
-			tid, sig, TARGET_COMM);
+	if ((sig == SIGABRT || sig == SIGKILL) && is_target_pid(tid)) {
+		pr_info("bsac_hook: blocked tgkill(%d,%d)\n", tid, sig);
 		return 0;
 	}
 	return orig_tgkill(regs);
 }
 
-/* ------------------------------------------------------------------ */
-/* Module init / exit                                                  */
-/* ------------------------------------------------------------------ */
-
 static int __init bsac_hook_init(void)
 {
-	pr_info("bsac_hook: loading\n");
-
 	sys_call_table = (void **)kallsyms_lookup_name("sys_call_table");
 	if (!sys_call_table) {
-		pr_err("bsac_hook: sys_call_table not found via kallsyms\n");
+		pr_err("bsac_hook: sys_call_table not found\n");
 		return -ENOENT;
 	}
 	pr_info("bsac_hook: sys_call_table @ %px\n", sys_call_table);
 
-	/* Save originals */
-	orig_exit_group = (syscall_fn_t)sys_call_table[__NR_exit_group_arm64];
-	orig_kill       = (syscall_fn_t)sys_call_table[__NR_kill_arm64];
-	orig_tgkill     = (syscall_fn_t)sys_call_table[__NR_tgkill_arm64];
+	orig_exit_group = (syscall_fn_t)sys_call_table[94];
+	orig_kill       = (syscall_fn_t)sys_call_table[129];
+	orig_tgkill     = (syscall_fn_t)sys_call_table[131];
 
-	pr_info("bsac_hook: orig exit_group=%px kill=%px tgkill=%px\n",
-		orig_exit_group, orig_kill, orig_tgkill);
+	wp_disable();
+	sys_call_table[94]  = (void *)hook_exit_group;
+	sys_call_table[129] = (void *)hook_kill;
+	sys_call_table[131] = (void *)hook_tgkill;
+	wp_restore();
 
-	/* Make syscall table writable */
-	if (make_sct_rw((unsigned long)sys_call_table) != 0) {
-		pr_err("bsac_hook: failed to make sys_call_table writable\n");
-		return -EPERM;
-	}
-
-	/* Install hooks */
-	sys_call_table[__NR_exit_group_arm64] = (void *)hook_exit_group;
-	sys_call_table[__NR_kill_arm64]       = (void *)hook_kill;
-	sys_call_table[__NR_tgkill_arm64]     = (void *)hook_tgkill;
-
-	/* Restore read-only */
-	make_sct_ro((unsigned long)sys_call_table);
-
-	pr_info("bsac_hook: hooks installed (exit_group=%px kill=%px tgkill=%px)\n",
-		hook_exit_group, hook_kill, hook_tgkill);
+	pr_info("bsac_hook: hooks installed\n");
 	return 0;
 }
 
 static void __exit bsac_hook_exit(void)
 {
-	pr_info("bsac_hook: unloading, restoring original syscalls\n");
-
-	if (make_sct_rw((unsigned long)sys_call_table) != 0) {
-		pr_err("bsac_hook: cannot restore -- table not writable!\n");
-		return;
-	}
-
-	sys_call_table[__NR_exit_group_arm64] = (void *)orig_exit_group;
-	sys_call_table[__NR_kill_arm64]       = (void *)orig_kill;
-	sys_call_table[__NR_tgkill_arm64]     = (void *)orig_tgkill;
-
-	make_sct_ro((unsigned long)sys_call_table);
-
-	pr_info("bsac_hook: original syscalls restored\n");
+	wp_disable();
+	sys_call_table[94]  = (void *)orig_exit_group;
+	sys_call_table[129] = (void *)orig_kill;
+	sys_call_table[131] = (void *)orig_tgkill;
+	wp_restore();
+	pr_info("bsac_hook: unloaded\n");
 }
 
 module_init(bsac_hook_init);
