@@ -67,6 +67,17 @@ jobs:
             KCFLAGS="-Wno-error -w" modules
           cp bsre_hide_build/bsre_hide.ko .
 
+      - name: Upload kernel build files (for local compilation)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-files
+          path: |
+            Module.symvers
+            .config
+            include/config/auto.conf
+            include/generated/autoconf.h
+          if-no-files-found: warn
+
       - name: Upload modules
         uses: actions/upload-artifact@v4
         with:

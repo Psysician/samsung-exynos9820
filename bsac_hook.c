@@ -120,13 +120,6 @@ static void **find_sys_call_table(void)
 	void *close_fn;
 	unsigned long addr;
 
-	table = (void **)kallsyms_lookup_name("sys_call_table");
-	if (table) {
-		pr_err("bsac_hook: sys_call_table via kallsyms @ %px\n", table);
-		return table;
-	}
-
-	pr_err("bsac_hook: sys_call_table not in kallsyms, scanning...\n");
 	close_fn = (void *)kallsyms_lookup_name("__arm64_sys_close");
 	if (!close_fn)
 		close_fn = (void *)kallsyms_lookup_name("sys_close");
@@ -134,26 +127,44 @@ static void **find_sys_call_table(void)
 		pr_err("bsac_hook: no reference syscall found\n");
 		return NULL;
 	}
-	pr_err("bsac_hook: reference sys_close @ %px\n", close_fn);
 
-	for (addr = (unsigned long)kallsyms_lookup_name("_stext");
-	     addr < (unsigned long)kallsyms_lookup_name("_etext");
-	     addr += sizeof(void *)) {
-		void **candidate = (void **)addr;
-		if (candidate[__NR_close] == close_fn) {
-			pr_err("bsac_hook: sys_call_table found by scan @ %px\n", candidate);
-			return candidate;
+	/* Check direct kallsyms first, but verify it has real entries */
+	table = (void **)kallsyms_lookup_name("sys_call_table");
+	if (table && table[__NR_close] == close_fn) {
+		pr_err("bsac_hook: sys_call_table via kallsyms @ %px\n", table);
+		return table;
+	}
+	if (table)
+		pr_err("bsac_hook: kallsyms returned %px but close[%d]=%px != %px, scanning\n",
+			table, __NR_close, table[__NR_close], close_fn);
+
+	/* Scan kernel rodata for the table */
+	pr_err("bsac_hook: scanning for sys_call_table, ref close=%px\n", close_fn);
+	{
+		unsigned long start = (unsigned long)kallsyms_lookup_name("_stext");
+		unsigned long end = (unsigned long)kallsyms_lookup_name("_edata");
+		if (!start) start = 0xffffff8008000000UL;
+		if (!end) end = start + 0x02000000UL;
+		pr_err("bsac_hook: scan range %lx - %lx\n", start, end);
+		for (addr = start; addr < end - 512 * 8; addr += 8) {
+			table = (void **)addr;
+			if (table[__NR_close] == close_fn) {
+				pr_err("bsac_hook: FOUND @ %px\n", table);
+				return table;
+			}
 		}
 	}
-	pr_err("bsac_hook: sys_call_table not found by scan\n");
+	pr_err("bsac_hook: sys_call_table NOT FOUND\n");
 	return NULL;
 }
 
 static int __init bsac_hook_init(void)
 {
 	sys_call_table = find_sys_call_table();
-	if (!sys_call_table)
+	if (!sys_call_table) {
+		pr_err("bsac_hook: sys_call_table NOT FOUND\n");
 		return -ENOENT;
+	}
 
 	orig_exit       = (syscall_fn_t)sys_call_table[93];
 	orig_exit_group = (syscall_fn_t)sys_call_table[94];
