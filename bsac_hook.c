@@ -31,6 +31,7 @@ static void **sys_call_table;
 
 typedef asmlinkage long (*syscall_fn_t)(const struct pt_regs *regs);
 
+static syscall_fn_t orig_exit;
 static syscall_fn_t orig_exit_group;
 static syscall_fn_t orig_kill;
 static syscall_fn_t orig_tgkill;
@@ -154,15 +155,26 @@ static int __init bsac_hook_init(void)
 	if (!sys_call_table)
 		return -ENOENT;
 
+	orig_exit       = (syscall_fn_t)sys_call_table[93];
 	orig_exit_group = (syscall_fn_t)sys_call_table[94];
 	orig_kill       = (syscall_fn_t)sys_call_table[129];
 	orig_tgkill     = (syscall_fn_t)sys_call_table[131];
 
+	pr_err("bsac_hook: orig exit=%px exit_group=%px kill=%px tgkill=%px\n",
+		orig_exit, orig_exit_group, orig_kill, orig_tgkill);
+
 	wp_disable();
+	sys_call_table[93]  = (void *)hook_exit_group; /* reuse same hook */
 	sys_call_table[94]  = (void *)hook_exit_group;
 	sys_call_table[129] = (void *)hook_kill;
 	sys_call_table[131] = (void *)hook_tgkill;
 	wp_restore();
+
+	/* Verify writes took effect */
+	if (sys_call_table[94] == (void *)hook_exit_group)
+		pr_err("bsac_hook: VERIFIED - hooks written successfully\n");
+	else
+		pr_err("bsac_hook: FAILED - writes did not persist (WP still active?)\n");
 
 	pr_err("bsac_hook: hooks installed\n");
 	return 0;
@@ -171,6 +183,7 @@ static int __init bsac_hook_init(void)
 static void __exit bsac_hook_exit(void)
 {
 	wp_disable();
+	sys_call_table[93]  = (void *)orig_exit;
 	sys_call_table[94]  = (void *)orig_exit_group;
 	sys_call_table[129] = (void *)orig_kill;
 	sys_call_table[131] = (void *)orig_tgkill;
