@@ -31,7 +31,7 @@ jobs:
             arch/arm64/include/generated
             scripts
             tools
-          key: kernel-prep-${{ hashFiles('Makefile', 'Kconfig') }}-v2
+          key: kernel-prep-${{ hashFiles('Makefile', 'Kconfig') }}-v3
 
       - name: Deploy Toolchain
         run: git clone --depth 1 -j $(nproc) --branch $TOOLCHAIN --single-branch https://github.com/CruelKernel/samsung-exynos9820-toolchain toolchain
@@ -39,17 +39,13 @@ jobs:
       - name: Prepare kernel (only on cache miss)
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          # Try to download Module.symvers from latest full build
-          gh run download --repo Psysician/samsung-exynos9820 \
-            --name kernel-build-cache --dir /tmp/kbc 2>/dev/null && \
-            cp /tmp/kbc/Module.symvers . 2>/dev/null || true
-          ./cruelbuild config model=G973F name="22625185" toolchain=$TOOLCHAIN \
-            +magisk +nohardening +nohardening2 +ttl +wireguard +cifs +sdfat +ntfs \
-            +force_dex_wqhd +morosound +boeffla_wl_blocker +ftrace
-          make ARCH=arm64 CC=toolchain/bin/aarch64-cruel-elf-gcc \
-            CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf- modules_prepare -j$(nproc)
-        env:
-          GH_TOKEN: ${{ github.token }}
+          set -ex
+          export ARCH=arm64
+          export CC=toolchain/bin/aarch64-cruel-elf-gcc
+          export CROSS_COMPILE=toolchain/bin/aarch64-cruel-elf-
+          make exynos9820-beyond1lte_defconfig
+          make olddefconfig
+          make modules_prepare -j$(nproc)
 
       - name: Build bsac_hook.ko
         run: |
