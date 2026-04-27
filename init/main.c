@@ -621,7 +621,9 @@ static void __init rkp_init(void)
 #ifdef CONFIG_UH_RKP_FIMC_CHECK
 	rkp_init_data.no_fimc_verify = 1;
 #endif
+#ifdef TRAMP_VALIAS
 	rkp_init_data.tramp_valias = (u64)TRAMP_VALIAS;
+#endif
 	rkp_init_data.zero_pg_addr = (u64)__pa(empty_zero_page);
 	rkp_s_bitmap_ro = (sparse_bitmap_for_kernel_t *)
 		uh_call(UH_APP_RKP, RKP_GET_RO_BITMAP, 0, 0, 0, 0);
