@@ -35,6 +35,9 @@ extern char hypsniff_el2_blob_end[];
 /* Physical address of the persistent EL2 vector page */
 unsigned long hypsniff_el2_vectors_pa;
 
+/* Boot status for debugging (readable from module via kallsyms) */
+long hypsniff_el2_smc_result = -999;
+
 /* Virtual address of the vector page (for module to ioremap from PA) */
 static void *vector_page_va;
 
@@ -159,6 +162,7 @@ void __init hypsniff_el2_boot_init(void)
 				1,
 				hypsniff_el2_vectors_pa,
 				0);
+	hypsniff_el2_smc_result = smc_ret;
 
 	if (smc_ret != 0) {
 		pr_err("hypsniff_boot: SMC 0xC2000400 failed: ret=%ld\n",
