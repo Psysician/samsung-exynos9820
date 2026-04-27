@@ -17,6 +17,7 @@
 
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/io.h>
 #include <linux/proc_fs.h>
@@ -34,9 +35,11 @@ extern char hypsniff_el2_blob_end[];
 
 /* Physical address of the persistent EL2 vector page */
 unsigned long hypsniff_el2_vectors_pa;
+EXPORT_SYMBOL(hypsniff_el2_vectors_pa);
 
 /* Boot status for debugging (readable from module via kallsyms) */
 long hypsniff_el2_smc_result = -999;
+EXPORT_SYMBOL(hypsniff_el2_smc_result);
 
 /* Virtual address of the vector page (for module to ioremap from PA) */
 static void *vector_page_va;
