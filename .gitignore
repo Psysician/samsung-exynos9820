@@ -39,6 +39,7 @@
 *.symtypes
 *.tar
 *.xz
+*.zip
 Module.symvers
 modules.builtin
 
@@ -125,3 +126,15 @@ all.config
 
 # fetched Android config fragments
 kernel/configs/android-*.cfg
+
+# samsung
+*.dtbo
+*.reverse.dts
+__pycache__/
+*.pyc
+
+/*.img
+/config.json
+/config.info
+/config.G*
+/config.N*

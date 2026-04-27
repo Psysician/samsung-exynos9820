@@ -654,8 +654,7 @@ static long dpp_subdev_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg
 		break;
 
 	case DPP_STOP:
-		if (&arg != NULL)
-			reset = (bool)arg;
+		reset = (bool)arg;
 #ifdef CONFIG_EXYNOS_MCD_HDR
 		ret = dpp_mcd_stop(dpp);
 #endif
@@ -1185,7 +1184,7 @@ static int dpp_probe(struct platform_device *pdev)
 	if (IS_SUPPORT_WCG(attr))
 		dpp->attr |= (1 << DPP_ATTR_WCG);
 
-	dpp_info("DPP:INFO:%s:%x attr : %x", __func__, dpp->id, dpp->attr);
+	dpp_info("DPP:INFO:%s:%x attr : %lx", __func__, dpp->id, dpp->attr);
 #if 0
 	print_dpp_restrict(dpp->attr);
 #endif

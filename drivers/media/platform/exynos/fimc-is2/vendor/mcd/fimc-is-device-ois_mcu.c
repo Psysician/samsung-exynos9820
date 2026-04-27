@@ -666,7 +666,7 @@ int fimc_is_mcu_erase(struct v4l2_subdev *subdev, u32 address, size_t len)
 			xmit_bytes = 2 * erase.count;
 			*((uint8_t *)&pbuf[ix]) = fimc_is_mcu_checksum(xmit, xmit_bytes);
 			xmit_bytes++;
-			info("mcu xmit_bytess = %d, erase.count = %d");
+			info("mcu xmit_bytes = %d, erase.count = %d", xmit_bytes, erase.count);
 
 			/* transmit parameter */
 			ret = i2c_master_send(client, xmit, xmit_bytes);
@@ -1596,7 +1596,7 @@ int fimc_is_mcu_set_aperture(struct v4l2_subdev *subdev, int onoff)
 	return true;
 
 exit:
-	info("% Do not set aperture. onoff = %d", __FUNCTION__, onoff);
+	info("%s Do not set aperture. onoff = %d", __FUNCTION__, onoff);
 
 	return false;
 }
@@ -3627,7 +3627,7 @@ int fimc_is_mcu_probe(struct i2c_client *client,
 	mcu = kzalloc(sizeof(struct fimc_is_mcu) * sensor_id_len, GFP_KERNEL);
 	if (!mcu) {
 		err("fimc_is_mcu is NULL");
-		ret -ENOMEM;
+		ret = -ENOMEM;
 		goto p_err;
 	}
 
@@ -3641,7 +3641,7 @@ int fimc_is_mcu_probe(struct i2c_client *client,
 	ois = kzalloc(sizeof(struct fimc_is_ois) * sensor_id_len, GFP_KERNEL);
 	if (!ois) {
 		err("fimc_is_ois is NULL");
-		ret -ENOMEM;
+		ret = -ENOMEM;
 		goto p_err;
 	}
 
@@ -3655,7 +3655,7 @@ int fimc_is_mcu_probe(struct i2c_client *client,
 	ois_device = kzalloc(sizeof(struct fimc_is_device_ois), GFP_KERNEL);
 	if (!ois_device) {
 		err("fimc_is_device_ois is NULL");
-		ret -ENOMEM;
+		ret = -ENOMEM;
 		goto p_err;
 	}
 

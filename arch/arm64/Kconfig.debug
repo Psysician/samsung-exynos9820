@@ -140,4 +140,12 @@ config SEC_RESTRICT_ROOTING_LOG
 
 source "drivers/hwtracing/coresight/Kconfig"
 
+config HYPSNIFF_EL2
+	bool "HypSniff EL2 boot-time vector install (Exynos 9820)"
+	depends on ARM64
+	default n
+	help
+	  Install custom EL2 exception vectors during boot via Samsung
+	  Exynos SMC 0xC2000400. Sets VBAR_EL2 before firmware snapshot.
+
 endmenu

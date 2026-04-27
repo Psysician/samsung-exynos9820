@@ -2276,7 +2276,7 @@ static void decon_release_old_bufs(struct decon_device *decon,
 static int decon_set_hdr_info(struct decon_device *decon,
 		struct decon_reg_data *regs, int win_num, bool on)
 {
-	struct exynos_video_meta *video_meta;
+	struct exynos_video_meta *video_meta = NULL;
 #if defined(CONFIG_EXYNOS_DISPLAYPORT)
 	int ret = 0;
 #endif
@@ -3513,7 +3513,7 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 			v4l2_subdev_call(decon->dpp_sd[i], core, ioctl,
 					DPP_GET_RESTRICTION, &disp_res.dpp_ch[i]);
 
-			decon_info("DECON:INFO:%s:DPP_RESTRICTIONS:0x%x\n",
+			decon_info("DECON:INFO:%s:DPP_RESTRICTIONS:0x%lx\n",
 				__func__, disp_res.dpp_ch[i].attr);
 
 		}
@@ -4701,7 +4701,7 @@ static int decon_probe(struct platform_device *pdev)
 
 	ret = create_wcg_sysfs(decon);
 	if (ret)
-		decon_err("DECON:ERR:%s:faield to create sysfs for wcg\n");
+		decon_err("DECON:ERR:%s:failed to create sysfs for wcg\n", __func__);
 #endif
 	dpu_init_win_update(decon);
 	decon_init_low_persistence_mode(decon);

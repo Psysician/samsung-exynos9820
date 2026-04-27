@@ -341,20 +341,20 @@ int carve_binary_version(enum is_bin_type type, unsigned int hint, void *data, s
 
 	ofs = size - bin_ver_info[type].offset;
 	if (ofs <= 0) {
-		pr_warn("out of range offset(size: %d <= offset: %d)\n", size,
+		pr_warn("out of range offset(size: %zu <= offset: %d)\n", size,
 					bin_ver_info[type].offset);
 		return -EINVAL;
 	}
 
 	len = bin_ver_info[type].length;
 	if ((ofs + len) > size) {
-		pr_warn("too long version length (binary: %d < version: %d)\n",
+		pr_warn("too long version length (binary: %zu < version: %d)\n",
 						size, (ofs + len));
 		len -= ((ofs + len) - size);
 	}
 
 	buf = bin_ver_info[type].get_buf(&bin_ver_info[type], hint);
-	memcpy(buf, &data[ofs], len);
+	memcpy(buf, &((char *)data)[ofs], len);
 	buf[len] = '\0';
 
 	info("%s version: %s\n", bin_names[bin_ver_info[type].get_name_idx(hint)],

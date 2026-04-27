@@ -75,6 +75,7 @@ KBUILD_CFLAGS	+= $(lseinstr) $(brokengasinst)
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
 KBUILD_CFLAGS	+= $(call cc-option, -mpc-relative-literal-loads)
 KBUILD_CFLAGS	+= -fno-pic
+KBUILD_CFLAGS	+= $(call cc-disable-warning, psabi)
 KBUILD_AFLAGS	+= $(lseinstr) $(brokengasinst)
 
 KBUILD_CFLAGS	+= $(call cc-option,-mabi=lp64)
@@ -84,22 +85,23 @@ ifeq ($(CONFIG_CPU_BIG_ENDIAN), y)
 KBUILD_CPPFLAGS	+= -mbig-endian
 CHECKFLAGS	+= -D__AARCH64EB__
 AS		+= -EB
-LD		+= -EB
 ifeq ($(ld-name),gold)
-LDFLAGS		+= -maarch64_elf64_be_vec
+LDFLAGS		+= -EB -maarch64_elf64_be_vec
 else
-LDFLAGS		+= -maarch64linuxb
+# Prefer the baremetal ELF build target, but not all toolchains include
+# it so fall back to the standard linux version if needed.
+LDFLAGS		+= -EB $(call ld-option, -maarch64elfb, -maarch64linuxb)
 endif
 UTS_MACHINE	:= aarch64_be
 else
 KBUILD_CPPFLAGS	+= -mlittle-endian
 CHECKFLAGS	+= -D__AARCH64EL__
 AS		+= -EL
-LD		+= -EL
 ifeq ($(ld-name),gold)
-LDFLAGS		+= -maarch64_elf64_le_vec
+LDFLAGS		+= -EL -maarch64_elf64_le_vec
 else
-LDFLAGS		+= -maarch64linux
+# Same as above, prefer ELF but fall back to linux target if needed.
+LDFLAGS		+= -EL $(call ld-option, -maarch64elf, -maarch64linux)
 endif
 UTS_MACHINE	:= aarch64
 endif
@@ -161,7 +163,7 @@ endif
 
 KBUILD_DTBS	:= dtbs
 
-all:	Image.gz $(KBUILD_DTBS) $(subst $\",,$(CONFIG_BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME))
+all:	Image $(KBUILD_DTBS) $(subst $\",,$(CONFIG_BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME))
 
 
 Image: vmlinux

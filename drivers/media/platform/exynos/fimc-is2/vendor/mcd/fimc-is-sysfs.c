@@ -1283,7 +1283,7 @@ static ssize_t camera_ssrm_camera_info_store(struct device *dev,
 	ret_count = sscanf(buf, "%d%d%d%d%d%d%d", &temp.operation, &temp.cameraID, &temp.previewMinFPS,
 		&temp.previewMaxFPS, &temp.previewSizeWidth,  &temp.previewSizeHeight, &temp.sensorOn);
 
-	if (ret_count > sizeof(SsrmCameraInfo)/sizeof(int)) {
+	if (ret_count > sizeof(SsrmCameraInfo)/(sizeof(int))) {
 		return -EINVAL;
 	}
 
@@ -2761,7 +2761,7 @@ static ssize_t camera_front_tof_check_pd_store(struct device *dev,
 		return -ENODEV;
 	}
 
-	ret_count = sscanf(buf, "%d", &value);
+	ret_count = sscanf(buf, "%hhd", &value);
 	camera_tof_set_laser_current(SENSOR_POSITION_FRONT_TOF, value);
 	return count;
 }

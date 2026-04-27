@@ -2942,7 +2942,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			/* Record the group's reclaim efficiency */
 			vmpressure(sc->gfp_mask, memcg, false,
 				   sc->nr_scanned - scanned,
-				   sc->nr_reclaimed - reclaimed);
+				   sc->nr_reclaimed - reclaimed, sc->order);
 
 			/*
 			 * Direct reclaim and kswapd have to scan all memory
@@ -2978,7 +2978,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 		/* Record the subtree's reclaim efficiency */
 		vmpressure(sc->gfp_mask, sc->target_mem_cgroup, true,
 			   sc->nr_scanned - nr_scanned,
-			   sc->nr_reclaimed - nr_reclaimed);
+			   sc->nr_reclaimed - nr_reclaimed, sc->order);
 
 		if (sc->nr_reclaimed - nr_reclaimed)
 			reclaimable = true;
@@ -3170,7 +3170,11 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 	pg_data_t *last_pgdat;
 	struct zoneref *z;
 	struct zone *zone;
+	void *saved;
 retry:
+	saved = current->journal_info; /* save journal info */
+	current->journal_info = NULL;
+
 	delayacct_freepages_start();
 
 	if (global_reclaim(sc))
@@ -3206,6 +3210,8 @@ retry:
 	}
 
 	delayacct_freepages_end();
+	/* restore journal info */
+	current->journal_info = saved;
 
 	if (sc->nr_reclaimed)
 		return sc->nr_reclaimed;
@@ -3726,7 +3732,8 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 			wake_up_all(&pgdat->pfmemalloc_wait);
 
 		/* Check if kswapd should be suspending */
-		if (try_to_freeze() || kthread_should_stop())
+		if (try_to_freeze() || kthread_should_stop() ||
+		    !atomic_long_read(&kswapd_waiters))
 			break;
 
 		/*

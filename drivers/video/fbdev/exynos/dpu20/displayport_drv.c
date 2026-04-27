@@ -142,7 +142,7 @@ static u64 displayport_find_edid_max_pixelclock(void)
 				supported_videos[i].dv_timings.bt.pixelclock > max_pclk)
 			max_pclk = supported_videos[i].dv_timings.bt.pixelclock;
 	}
-	displayport_info("find max pclk : %ld\n", max_pclk);
+	displayport_info("find max pclk : %lld\n", max_pclk);
 	return max_pclk;
 }
 
@@ -167,7 +167,7 @@ static int displayport_check_edid_max_clock(struct displayport_device *displaypo
 	if (displayport->rx_edid_data.max_support_clk != 0) {
 		if (calc_pixel_clock > displayport->rx_edid_data.max_support_clk * MHZ) {
 			displayport_info("RX support Max TMDS Clock = %llu, but pixel clock = %llu\n",
-					displayport->rx_edid_data.max_support_clk * MHZ, calc_pixel_clock);
+					(u64) displayport->rx_edid_data.max_support_clk * MHZ, calc_pixel_clock);
 			ret_val = false;
 		}
 	} else
@@ -2668,6 +2668,12 @@ static void displayport_aux_sel(struct displayport_device *displayport)
 	}
 }
 
+#ifdef CONFIG_DISPLAYPORT_DEX_FORCE_WQHD
+static void displayport_check_adapter_type(struct displayport_device *displayport)
+{
+	displayport->dex_adapter_type = DEX_WQHD_SUPPORT;
+}
+#else
 static void displayport_check_adapter_type(struct displayport_device *displayport)
 {
 #ifdef FEATURE_DEX_ADAPTER_TWEAK
@@ -2688,6 +2694,7 @@ static void displayport_check_adapter_type(struct displayport_device *displaypor
 		break;
 	};
 }
+#endif
 
 static int usb_typec_displayport_notification(struct notifier_block *nb,
 		unsigned long action, void *data)
@@ -3728,8 +3735,8 @@ static int displayport_update_hmd_list(struct displayport_device *displayport, c
 		ret = -EPERM;
 		goto exit;
 	}
-	kstrtouint(tok, 10, &num_hmd);
-	if (num_hmd > MAX_NUM_HMD) {
+	ret = kstrtouint(tok, 10, &num_hmd);
+	if (ret || num_hmd > MAX_NUM_HMD) {
 		displayport_err("invalid list num %d\n", num_hmd);
 		num_hmd = 0;
 		ret = -EPERM;
@@ -3747,14 +3754,20 @@ static int displayport_update_hmd_list(struct displayport_device *displayport, c
 		tok  = strsep(&p, ",");
 		if (tok == NULL || *tok == 0xa/*LF*/)
 			break;
-		kstrtouint(tok, 16, &val);
+		if (kstrtouint(tok, 16, &val)) {
+			ret = -EINVAL;
+			break;
+		}
 		displayport->hmd_list[j].ven_id = val;
 
 		/* PID */
 		tok  = strsep(&p, ",");
 		if (tok == NULL || *tok == 0xa/*LF*/)
 			break;
-		kstrtouint(tok, 16, &val);
+		if (kstrtouint(tok, 16, &val)) {
+			ret = -EINVAL;
+			break;
+		}
 		displayport->hmd_list[j].prod_id = val;
 
 		displayport_info("HMD%02d: %s, 0x%04x, 0x%04x\n", j,

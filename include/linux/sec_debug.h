@@ -345,7 +345,17 @@ extern void sec_debug_task_sched_log(int cpu, struct task_struct *task);
 extern void sec_debug_irq_sched_log(unsigned int irq, void *fn, int en);
 extern void sec_debug_irq_enterexit_log(unsigned int irq, unsigned long long start_time);
 
+#ifdef CONFIG_KALLSYMS
 extern void sec_debug_set_kallsyms_info(struct sec_debug_ksyms *ksyms, int magic);
+#else
+static inline void sec_debug_set_kallsyms_info(struct sec_debug_ksyms *ksyms, int magic)
+{
+	if (ksyms) {
+		memset(ksyms, 0, sizeof(*ksyms));
+		ksyms->magic = magic;
+	}
+}
+#endif
 extern int sec_debug_check_sj(void);
 
 extern unsigned int sec_debug_get_kevent_paddr(int type);
@@ -521,6 +531,7 @@ extern void sec_debug_set_extra_info_epd(char *str);
 #define sec_debug_set_extra_info_panic(a)	do { } while (0)
 #define sec_debug_set_extra_info_backtrace(a)	do { } while (0)
 #define sec_debug_set_extra_info_backtrace_cpu(a, b)	do { } while (0)
+#define sec_debug_set_extra_info_backtrace_task(a)	do { } while (0)
 #define sec_debug_set_extra_info_evt_version()	do { } while (0)
 #define sec_debug_set_extra_info_sysmmu(a)	do { } while (0)
 #define sec_debug_set_extra_info_busmon(a)	do { } while (0)
@@ -660,7 +671,9 @@ struct sec_debug_next {
 	struct sec_debug_spinlock_info rlock;
 	struct sec_debug_kernel_data kernd;
 
+#ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
 	struct sec_debug_auto_comment auto_comment;
+#endif
 	struct sec_debug_shared_buffer extra_info;
 };
 
@@ -687,7 +700,7 @@ extern void sec_debug_tsp_command_history(char *buf);
 #define sec_debug_tsp_raw_data(a, ...)			do { } while (0)
 #define sec_debug_tsp_raw_data_msg(a, b, ...)		do { } while (0)
 #define sec_tsp_raw_data_clear()			do { } while (0)
-#define sec_debug_tsp_command_history()			do { } while (0)
+#define sec_debug_tsp_command_history(buf)		do { } while (0)
 #endif /* CONFIG_SEC_DEBUG_TSP_LOG */
 
 #ifdef CONFIG_TOUCHSCREEN_DUMP_MODE

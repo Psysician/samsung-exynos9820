@@ -785,6 +785,12 @@ asmlinkage __visible void __init start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
+#ifdef CONFIG_HYPSNIFF_EL2
+	{
+		extern void hypsniff_el2_boot_init(void);
+		hypsniff_el2_boot_init();
+	}
+#endif
 #ifdef CONFIG_UH_RKP
 	rkp_init();
 #endif
@@ -1017,7 +1023,7 @@ __setup("initcall_blacklist=", initcall_blacklist);
 
 #ifdef CONFIG_SEC_BOOTSTAT
 
-static bool __init_or_module initcall_sec_debug = true;
+static bool __initdata_or_module initcall_sec_debug = true;
 
 static int __init_or_module do_one_initcall_sec_debug(initcall_t fn)
 {

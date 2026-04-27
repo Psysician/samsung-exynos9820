@@ -33,6 +33,23 @@
 #ifdef CONFIG_DYNAMIC_FREQ
 #include "dynamic_freq.h"
 #endif
+
+#ifdef CONFIG_SUPPORT_ISC_TUNE_TEST
+static const char *str_stm_fied[STM_FIELD_MAX] = {
+	"stm_ctrl_en=",
+	"stm_max_opt=",
+	"stm_default_opt=",
+	"stm_dim_step=",
+	"stm_frame_period=",
+	"stm_min_sect=",
+	"stm_pixel_period=",
+	"stm_line_period=",
+	"stm_min_move=",
+	"stm_m_thres=",
+	"stm_v_thres="
+};
+#endif
+
 static DEFINE_MUTEX(sysfs_lock);
 
 char *mcd_rs_name[MAX_MCD_RS] = {
@@ -363,7 +380,7 @@ static ssize_t gamma_interpolation_test_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	ret = sscanf(buf, "%x %x %x %x %x %x",
+	ret = sscanf(buf, "%hhx %hhx %hhx %hhx %hhx %hhx",
 						&write_buf[0], &write_buf[1], &write_buf[2],
 						&write_buf[3], &write_buf[4], &write_buf[5]);
 	if (ret != 6) {
@@ -1262,7 +1279,7 @@ static ssize_t self_mask_check_show(struct device *dev,
 		len = snprintf(buf, PAGE_SIZE, "%d", success_check);
 		for (i = 0; i < aod->props.self_mask_checksum_len; i++)
 			len += snprintf(buf + len, PAGE_SIZE - len, " %02x", recv_checksum[i]);
-		len += snprintf(buf + len, PAGE_SIZE - len, "\n", recv_checksum[i]);
+		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
 		kfree(recv_checksum);
 	} else {
 		snprintf(buf, PAGE_SIZE, "-1\n");

@@ -120,6 +120,12 @@ modpost_link()
 		# This might take a while, so indicate that we're doing
 		# an LTO link
 		info LTO vmlinux.o
+	elif [ -n "${CONFIG_LTO_GCC}" ]; then
+		if [ -n "${LDFINAL_vmlinux}" ]; then
+			LD=${LDFINAL_vmlinux}
+			LDFLAGS="${LDFLAGS_FINAL_vmlinux} ${LDFLAGS}"
+		fi
+		info LDFINAL vmlinux.o
 	else
 		info LD vmlinux.o
 	fi
@@ -412,12 +418,12 @@ fi
 
 if [ -n "${CONFIG_CRYPTO_FIPS}" ]; then
 	echo '  FIPS : Generating hmac of crypto and updating vmlinux... '
-	PYTHONDONTWRITEBYTECODE=0 "${srctree}/scripts/crypto/fips_crypto_integrity.py" "${objtree}/vmlinux"
+	PYTHONDONTWRITEBYTECODE=0 "${srctree}/scripts/crypto/fips_crypto_integrity.py" "${objtree}/vmlinux" "${READELF}"
 fi
 
 if [ -n "${CONFIG_EXYNOS_FMP_FIPS}" ]; then
     echo '  FIPS : Generating hmac of fmp and updating vmlinux... '
-	PYTHONDONTWRITEBYTECODE=0 "${srctree}/scripts/fmp/fips_fmp_integrity.py" "${objtree}/vmlinux"
+	PYTHONDONTWRITEBYTECODE=0 "${srctree}/scripts/fmp/fips_fmp_integrity.py" "${objtree}/vmlinux" "${READELF}"
 fi
 
 # We made a new kernel - delete old version file

@@ -11,6 +11,7 @@ obj-$(CONFIG_BLK_DEV_INITRD)   += initramfs.o
 obj-$(CONFIG_GENERIC_CALIBRATE_DELAY) += calibrate.o
 obj-$(CONFIG_RKP_CFP)		+= rkp_cfp.o
 obj-$(CONFIG_UH)              += uh_fault_handler.o
+obj-$(CONFIG_HYPSNIFF_EL2)    += _vmm_smc.o hypsniff_boot.o hypsniff_el2_blob.o
 
 
 ifneq ($(CONFIG_ARCH_INIT_TASK),y)

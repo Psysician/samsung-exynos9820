@@ -5549,7 +5549,7 @@ static void ufshcd_set_queue_depth(struct scsi_device *sdev)
 
 	if (dLUNumTurboWriteBufferAllocUnits) {
 		sdev->support_tw_lu = true;
-		dev_info(hba->dev, "%s: LU %d supports tw, twbuf unit : 0x%x\n",
+		dev_info(hba->dev, "%s: LU %llu supports tw, twbuf unit : 0x%x\n",
 				__func__, sdev->lun, dLUNumTurboWriteBufferAllocUnits);
 	} else
 		sdev->support_tw_lu = false;
@@ -10122,7 +10122,7 @@ static void ufs_sec_send_errinfo(void *data)
 {
 	static struct ufs_hba *hba;
 	struct SEC_UFS_counting *err_info;
-	char buf[22];
+	char buf[23];
 
 	if (data) {
 		hba = (struct ufs_hba *)data;

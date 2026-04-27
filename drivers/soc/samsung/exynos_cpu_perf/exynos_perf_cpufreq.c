@@ -144,7 +144,7 @@ static int cpufreq_log_thread(void *data)
 		}
 	}
 	// mif, gpu, task
-	ret += snprintf(buf + ret, buf_size - ret, "05-mif_cur 06-gpu_util 06-gpu_cur 07-task_cpu\n", grp_num, cpu);
+	ret += snprintf(buf + ret, buf_size - ret, "05-mif_cur 06-gpu_util 06-gpu_cur 07-task_cpu\n");
 
 	//---------------------
 	// body
@@ -268,7 +268,7 @@ static int run_seq_show(struct seq_file *file, void *iter)
 	if (is_running) {
 		seq_printf(file, "NO RESULT\n");
 	} else {
-		seq_printf(file, "%s", buf);	// PRINT RESULT
+		seq_printf(file, "%s", (char *)buf);	// PRINT RESULT
 	}
 	return 0;
 }

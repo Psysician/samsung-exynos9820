@@ -343,6 +343,10 @@
 #define __designated_init __attribute__((designated_init))
 #endif
 
+#if GCC_VERSION >= 90100
+#define __copy(symbol)                 __attribute__((__copy__(symbol)))
+#endif
+
 #endif	/* gcc version >= 40000 specific checks */
 
 #if !defined(__noclone)
@@ -351,6 +355,11 @@
 
 #if !defined(__no_sanitize_address)
 #define __no_sanitize_address
+#endif
+
+#if __GNUC__ >= 5
+/* Avoid reordering a top level statement */
+#define __noreorder    __attribute__((no_reorder))
 #endif
 
 /*

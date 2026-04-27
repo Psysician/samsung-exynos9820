@@ -664,7 +664,7 @@ static void simulate_SAFEFAULT(char *arg)
 
 	smp_call_function(simulate_ALLSPIN_LOCKUP_handler, NULL, 0);
 
-	pr_info("%s %p %s %d %p %p %llx\n",
+	pr_info("%s %p %s %d %p %p %lx\n",
 		__func__, current, current->comm, current->pid,
 		current_thread_info(), current->stack, current_stack_pointer);
 
@@ -768,7 +768,7 @@ static void simulate_WRITE_RO(char *arg)
 #ifdef CONFIG_RKP_CFP_JOPP
 	ptr = (unsigned long *)__start_rodata;
 #else
-	ptr = (unsigned long *)simulate_WRITE_RO;
+	ptr = NULL;
 #endif
 	*ptr ^= 0x12345678;
 }
@@ -893,7 +893,7 @@ static void simulate_SYNC_IRQ_LOCKUP(char *arg)
 
 	if (arg) {
 		if (!kstrtol(arg, 10, &irq)) {
-			struct irq_desc *desc = irq_to_desc(i);
+			struct irq_desc *desc = irq_to_desc(irq);
 
 			if (desc && desc->action && desc->action->thread_fn)
 				desc->action->thread_fn = dummy_wait_for_completion_irq_handler;	

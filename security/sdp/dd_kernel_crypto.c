@@ -643,7 +643,7 @@ int dd_sec_crypt_bio_pages(struct dd_info *info, struct bio *orig,
     if (rw == DD_ENCRYPT)
         memcpy(&clone->bi_iter, &iter_backup, sizeof(struct bvec_iter));
 
-	return 0;
+    return 0;
 }
 
 void dd_hex_key_dump(const char* tag, uint8_t *data, size_t data_len)
@@ -670,6 +670,6 @@ void dd_hex_key_dump(const char* tag, uint8_t *data, size_t data_len)
 	}
 	buf[buf_len - 1] = '\0';
 	printk(KERN_ERR
-		"[%s] %s(len=%d) : %s\n", "DEK_DBG", tag, data_len, buf);
+		"[%s] %s(len=%zu) : %s\n", "DEK_DBG", tag, data_len, buf);
 	kfree(buf);
 }
