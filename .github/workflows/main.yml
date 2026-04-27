@@ -130,6 +130,13 @@ jobs:
           path: '*.img'
           if-no-files-found: error
 
+      - name: Upload Module.symvers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModuleSymvers-${{ matrix.model }}
+          path: Module.symvers
+          if-no-files-found: warn
+
       - name: Upload Kernel Info
         uses: actions/upload-artifact@v4
         with:
