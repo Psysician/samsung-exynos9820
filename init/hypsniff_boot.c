@@ -71,7 +71,8 @@ static void write_stub_vectors(void *page)
  */
 static int vectors_proc_show(struct seq_file *m, void *v)
 {
-	seq_printf(m, "pa=0x%lx\n", hypsniff_el2_vectors_pa);
+	seq_printf(m, "pa=0x%lx smc=%ld\n",
+		   hypsniff_el2_vectors_pa, hypsniff_el2_smc_result);
 	return 0;
 }
 
@@ -193,11 +194,11 @@ void __init hypsniff_el2_boot_init(void)
 	return;
 
 fail_blob:
-	/*
-	 * Don't free the vector page on failure — it's harmless
-	 * (just contains eret stubs) and freeing init memory that
-	 * might be referenced is worse than leaking 4KB.
-	 */
 	hypsniff_el2_vectors_pa = 0;
-	pr_err("hypsniff_boot: EL2 init FAILED — module will not work\n");
+	pr_err("hypsniff_boot: EL2 init FAILED (smc=%ld)\n",
+	       hypsniff_el2_smc_result);
+
+	/* Create proc entry even on failure so module can read the error */
+	if (!proc_create("hypsniff_vectors", 0444, NULL, &vectors_proc_fops))
+		pr_warn("hypsniff_boot: failed to create /proc/hypsniff_vectors\n");
 }
