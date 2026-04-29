@@ -30,22 +30,22 @@
 ENTRY(hypsniff_el2_blob)
 	/*
 	 * x0 = physical address of vector page (2KB-aligned)
-	 * Save it before we clobber registers.
+	 * x1 = physical address of stack top (page PA + PAGE_SIZE)
 	 */
-	mov	x2, x0
 
-	/*
-	 * Set VBAR_EL2 to our vector page PA.
-	 * VBAR_EL2 requires bits [10:0] = 0 (2KB alignment).
-	 * The caller guarantees page-alignment (4KB > 2KB).
-	 */
-	msr	vbar_el2, x2
+	/* Set VBAR_EL2 to our vector page */
+	msr	vbar_el2, x0
+	isb
+
+	/* Set SP_EL2 to a valid stack so handlers can push registers */
+	mov	sp, x1
 	isb
 
 	/*
 	 * Return to EL3 firmware via SMC.
 	 * x0 = 0xC2000401 (return-from-EL2 magic)
 	 * x1 = 0 (success; non-zero causes firmware to reset EL2 state)
+	 * Firmware snapshots VBAR_EL2 AND SP_EL2 at this point.
 	 */
 	mov	x0, #0x0401
 	movk	x0, #0xC200, lsl #16

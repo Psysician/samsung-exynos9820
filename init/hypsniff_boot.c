@@ -92,6 +92,8 @@ static const struct file_operations vectors_proc_fops = {
 void __init hypsniff_el2_boot_init(void)
 {
 	void *blob_page_va;
+	void *stack_page_va;
+	phys_addr_t stack_top_pa;
 	size_t blob_size;
 	long smc_ret;
 
@@ -111,6 +113,20 @@ void __init hypsniff_el2_boot_init(void)
 	hypsniff_el2_vectors_pa = virt_to_phys(vector_page_va);
 	pr_info("hypsniff_boot: vector page VA=%px PA=0x%lx\n",
 		vector_page_va, hypsniff_el2_vectors_pa);
+
+	/*
+	 * Step 1b: Allocate a persistent stack page for EL2 handlers.
+	 * Without a valid SP_EL2, any exception handler that pushes
+	 * registers will fault at EL2 and crash the system.
+	 */
+	stack_page_va = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+	if (!stack_page_va) {
+		pr_err("hypsniff_boot: failed to allocate stack page\n");
+		goto fail_stack;
+	}
+	stack_top_pa = virt_to_phys(stack_page_va) + PAGE_SIZE;
+	pr_info("hypsniff_boot: stack page VA=%px top_PA=0x%llx\n",
+		stack_page_va, (u64)stack_top_pa);
 
 	/* Write stub eret vectors — module will overwrite later */
 	write_stub_vectors(vector_page_va);
@@ -165,7 +181,7 @@ void __init hypsniff_el2_boot_init(void)
 				PAGE_SIZE,
 				1,
 				hypsniff_el2_vectors_pa,
-				0);
+				stack_top_pa);
 	hypsniff_el2_smc_result = smc_ret;
 
 	if (smc_ret != 0) {
@@ -193,6 +209,9 @@ void __init hypsniff_el2_boot_init(void)
 
 	return;
 
+fail_stack:
+	free_page((unsigned long)vector_page_va);
+	vector_page_va = NULL;
 fail_blob:
 	hypsniff_el2_vectors_pa = 0;
 	pr_err("hypsniff_boot: EL2 init FAILED (smc=%ld)\n",
