@@ -31,21 +31,38 @@ ENTRY(hypsniff_el2_blob)
 	/*
 	 * x0 = physical address of vector page (2KB-aligned)
 	 * x1 = physical address of stack top (page PA + PAGE_SIZE)
+	 *
+	 * Following the exynos-kvm-patch pattern: set ALL EL2 state
+	 * needed for HVC to work, because the firmware snapshots
+	 * everything at SMC return and restores it on CPU events.
 	 */
 
-	/* Set VBAR_EL2 to our vector page */
+	/* 1. Set VBAR_EL2 — our exception vectors */
 	msr	vbar_el2, x0
 	isb
 
-	/* Set SP_EL2 to a valid stack so handlers can push registers */
+	/* 2. Set SP_EL2 — handler needs a valid stack for stp/ldp */
 	mov	sp, x1
+	isb
+
+	/* 3. Set HCR_EL2 — CRITICAL for HVC routing
+	 *    RW (bit 31) = 1: EL1 is AArch64 (without this, kernel crashes)
+	 *    HCD (bit 29) = 0: HVC enabled (EL1 can issue HVC to EL2)
+	 *    All other bits = 0: no stage-2, no trapping, no VHE
+	 */
+	mov	x2, #(1 << 31)		/* HCR_EL2 = 0x80000000 */
+	msr	hcr_el2, x2
+	isb
+
+	/* 4. Clear VTTBR_EL2 — no stage-2 until module sets it up */
+	msr	vttbr_el2, xzr
 	isb
 
 	/*
 	 * Return to EL3 firmware via SMC.
 	 * x0 = 0xC2000401 (return-from-EL2 magic)
 	 * x1 = 0 (success; non-zero causes firmware to reset EL2 state)
-	 * Firmware snapshots VBAR_EL2 AND SP_EL2 at this point.
+	 * Firmware snapshots ALL EL2 state at this point.
 	 */
 	mov	x0, #0x0401
 	movk	x0, #0xC200, lsl #16
