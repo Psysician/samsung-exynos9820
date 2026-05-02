@@ -502,12 +502,13 @@ static long htrace_set_hw_bp(pid_t pid, struct htrace_bp_info __user *ubp)
 	}
 
 	slot = -1;
-	for (int i = 0; i < HTRACE_MAX_HW_BPS; i++) {
+	{ int i;
+	for (i = 0; i < HTRACE_MAX_HW_BPS; i++) {
 		if (!ctx->hw_bps[i]) {
 			slot = i;
 			break;
 		}
-	}
+	} }
 	if (slot < 0) {
 		spin_unlock_irqrestore(&htrace_lock, flags);
 		return -ENOSPC;

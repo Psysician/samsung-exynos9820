@@ -49,6 +49,7 @@ SYSCALL_DEFINE1(arm64_personality, unsigned int, personality)
  * Wrappers to pass the pt_regs argument.
  */
 asmlinkage long sys_rt_sigreturn_wrapper(void);
+asmlinkage long sys_htrace(long request, pid_t pid, unsigned long addr, unsigned long data);
 #define sys_rt_sigreturn	sys_rt_sigreturn_wrapper
 #define sys_personality		sys_arm64_personality
 
