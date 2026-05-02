@@ -733,8 +733,11 @@ __SYSCALL(__NR_pkey_free,     sys_pkey_free)
 #define __NR_statx 291
 __SYSCALL(__NR_statx,     sys_statx)
 
+#define __NR_htrace 441
+__SYSCALL(__NR_htrace, sys_htrace)
+
 #undef __NR_syscalls
-#define __NR_syscalls 292
+#define __NR_syscalls 442
 
 /*
  * All syscalls below here should go away really,

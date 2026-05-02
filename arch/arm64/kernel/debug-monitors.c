@@ -26,6 +26,7 @@
 #include <linux/kprobes.h>
 #include <linux/stat.h>
 #include <linux/uaccess.h>
+#include <linux/htrace.h>
 #include <linux/sched/task_stack.h>
 
 #include <asm/cpufeature.h>
@@ -244,7 +245,11 @@ static int single_step_handler(unsigned long addr, unsigned int esr,
 		handler_found = true;
 
 	if (!handler_found && user_mode(regs)) {
-		send_user_sigtrap(TRAP_TRACE);
+		if (htrace_is_target(current)) {
+			htrace_handle_single_step(current, regs);
+		} else {
+			send_user_sigtrap(TRAP_TRACE);
+		}
 
 		/*
 		 * ptrace will disable single step unless explicitly
