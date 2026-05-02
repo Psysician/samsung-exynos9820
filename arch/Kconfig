@@ -1035,7 +1035,7 @@ config VMAP_STACK
 	  that is incorrect if the stack is in vmalloc space.
 
 config ARCH_OPTIONAL_KERNEL_RWX
-	def_bool n
+	def_bool y
 
 config ARCH_OPTIONAL_KERNEL_RWX_DEFAULT
 	def_bool n
